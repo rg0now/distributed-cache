@@ -37,10 +37,7 @@ int main(int argc, char *argv[]) {
   // flush
   PGresult *res = PQexec(conn, "TRUNCATE TABLE test;");
   if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-    std::cerr << "Drop DB failed: " << PQerrorMessage(conn) << std::endl;
-    PQclear(res);
-    PQfinish(conn);
-    return 1;
+    std::cerr << "Drop DB failed (ignored): " << PQerrorMessage(conn) << std::endl;
   }
   PQclear(res);
 

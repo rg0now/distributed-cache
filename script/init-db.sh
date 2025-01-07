@@ -3,17 +3,21 @@
 TABLE_DUMP=test_table.dump
 export PGPASSWORD=test
 
-USAGE="init-db.sh <num-keys>"
-[ -z "$1" ] && echo $USAGE && exit 0
-KEY_NUM="$1"
+USAGE="init-db.sh <db-version> <num-keys>"
+[ -z "$1" -o -z "$2" ] && echo $USAGE && exit 0
+VERSION="$1"
+KEY_NUM="$2"
 
 cd "$(dirname "$0")"
 
 echo "Start PostgreSQL server"
-sudo pg_ctlcluster 17 main restart -f
+sudo pg_ctlcluster $VERSION main restart -f
 
 echo "Change password"
-sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'test';"
+sudo -u postgres psql -h localhost -c "ALTER USER postgres WITH PASSWORD 'test';"
+
+echo "Create database"
+psql -h localhost -U postgres -c 'CREATE DATABASE "test"'
 
 if [ -r "$TABLE_DUMP" ]; then
     echo "Restoring database from dump $TABLE_DUMP"

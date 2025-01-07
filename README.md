@@ -11,12 +11,12 @@ make -C script/ all
 
 ## Init
 
-Start postgresql server on localhost, fill database with 10,000 keys, and save the database, then
-start 2 memcached instances using key-sharding with 2 memcached instances:
+Start postgresql server version 17 on localhost, fill database with 10,000 keys, and save the
+database, then start 2 memcached instances using key-sharding with 2 memcached instances:
   
 ``` console
 rm script/test_table.dump 
-script/init-db.sh 10000
+script/init-db.sh 17 10000
 script/init-cache-shard.sh 2
 ```
 

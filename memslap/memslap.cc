@@ -70,9 +70,6 @@ struct keyval_st {
       oss << "KEY_" << std::setfill('0') << std::setw(11) << i;
       key.chr[i] = oss.str();
       key.len[i] = key.chr[i].length();
-
-      // std::cout << "I: " << i << std::endl;
-      // std::cout << "K: " << key.chr[i] << ", len: " << key.len[i] << std::endl;
     }
   }
 
@@ -128,22 +125,41 @@ static size_t execute_get(const client_options &opt, memcached_st &memc, const k
     memcached_return_t rc;
     auto r = rnd(0, kv.num); // Select random key from our pool
 
-    // std::cout << "R: " << r << std::endl;
-    // std::cout << "K: " << kv.key.chr[r] << ", len: " << kv.key.len[r] << std::endl;
-
     free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
                        &rc));
 
     if (check_return(opt, memc, kv.key.chr[r].data(), rc)) {
-      // std::cout << "FOUND: " << kv.key.chr[r] << std::endl;
       ++retrieved;
     } else {
-      // std::cout << "NOT FOUND: " << kv.key.chr[r] << std::endl;
+      std::cout << "CHECK FAILED ON KEY " << kv.key.chr[r] << std::endl;
     }
 
     if (rc == MEMCACHED_SUCCESS) {
+      if (opt.isset("verbose")) {
+        std::string hostname("<NONE>");
+        const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
+        if (rc == MEMCACHED_SUCCESS) {
+          char buffer[1024];
+          sprintf(buffer, "%s:%d", server->_hostname, server->port());
+          hostname=std::string(buffer);
+        }
+        std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
+                  << hostname << std::endl;
+      }
       ++hit_num;
       continue;
+    }
+
+    if (opt.isset("verbose")) {
+      std::string hostname("<NONE>");
+      const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
+      if (rc == MEMCACHED_SUCCESS) {
+        char buffer[1024];
+        sprintf(buffer, "%s:%d", server->_hostname, server->port());
+        hostname=std::string(buffer);
+      }
+      std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
+                << hostname << std::endl;
     }
     ++miss_num;
 
@@ -162,12 +178,12 @@ static size_t execute_get(const client_options &opt, memcached_st &memc, const k
       continue;
     }
 
+    if (opt.isset("verbose")) {
+      std::cout << "STORING KEY IN CACHE: " << kv.key.chr[r] << std::endl;
+    }
+
     if (PQntuples(res) > 0) {
       std::string pg_value = PQgetvalue(res, 0, 0);
-
-      // std::cout << "V: " << pg_value.c_str() << std::endl;
-
-      // Write to memcached
       rc = memcached_set(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(),
                          pg_value.data(), pg_value.size(), 0, 0);
 

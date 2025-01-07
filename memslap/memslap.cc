@@ -83,6 +83,41 @@ struct keyval_st {
   // }
 };
 
+// warmup cache: this may rewrite keys if memcached does not have enough memory
+static int init_cache(const client_options &opt, memcached_st &memc, const keyval_st &kv) {
+  // For each execution, randomly select from our pool of keys
+  for (auto i = 0u; i < kv.num; ++i) {
+    // Query PostgreSQL
+    std::string query = "SELECT value FROM test WHERE key = $1";
+    const char *param_values[1] = {kv.key.chr[i].data()};
+    const int param_lengths[1] = {static_cast<int>(kv.key.chr[i].size())};
+    const int param_formats[1] = {0}; // text format
+
+    PGresult *res = PQexecParams(opt.postgres.conn, query.data(), 1, nullptr, param_values,
+                                 param_lengths, param_formats, 0);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
+      std::cerr << "ERROR: key " << kv.key.chr[i] << " not found in database" << std::endl;
+      PQclear(res);
+      return -1;
+    }
+
+    if (PQntuples(res) > 0) {
+      std::string pg_value = PQgetvalue(res, 0, 0);
+      memcached_return_t rc = memcached_set(&memc, kv.key.chr[i].data(), kv.key.chr[i].size(),
+                                            pg_value.data(), pg_value.size(), 0, 0);
+      if (rc != MEMCACHED_SUCCESS) {
+        std::cerr << "ERROR: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
+        PQclear(res);
+        return -1;
+      }
+    }
+    PQclear(res);
+  }
+
+  return 0;
+}
+
 static size_t execute_get(const client_options &opt, memcached_st &memc, const keyval_st &kv) {
   size_t retrieved = 0;
   random64 rnd{};
@@ -145,6 +180,7 @@ static size_t execute_get(const client_options &opt, memcached_st &memc, const k
 
   return retrieved;
 }
+
 class thread_context {
 public:
   thread_context(const client_options &opt_, const memcached_st &memc_, const keyval_st &kv_)
@@ -255,15 +291,6 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  // if (opt.num_keys > test_count) {
-  //   if (!opt.isset("quiet")) {
-  //     std::cerr << "Number of unique keys (" << opt.num_keys <<
-  //       ") must be less than or equal to execute number (" <<
-  //       test_count << ")" << std::endl;
-  //   }
-  //   exit(EXIT_FAILURE);
-  // }
-
   memcached_st memc;
   if (!check_memcached(opt, memc)) {
     exit(EXIT_FAILURE);
@@ -314,6 +341,26 @@ int main(int argc, char *argv[]) {
 
   if (!opt.isset("quiet")) {
     std::cout << "Time to generate   " << align << opt.num_keys
+              << " test keys:             " << align << time_format(keyval_elapsed).count()
+              << " seconds.\n";
+  }
+
+  if (opt.isset("verbose")) {
+    std::cout << "- Initializing cache for " << opt.num_keys
+              << " keys ...\n";
+  }
+  keyval_start = time_clock::now();
+  if (init_cache(opt, memc, kv) < 0) {
+      if (!opt.isset("quiet")) {
+        std::cerr << "Failed to init cache\n";
+      }
+      memcached_free(&memc);
+      exit(EXIT_FAILURE);
+  }
+  keyval_elapsed = time_clock::now() - keyval_start;
+
+  if (!opt.isset("quiet")) {
+    std::cout << "Time to init cache " << align << opt.num_keys
               << " test keys:             " << align << time_format(keyval_elapsed).count()
               << " seconds.\n";
   }

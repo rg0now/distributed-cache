@@ -38,6 +38,7 @@
 static std::atomic_bool wakeup;
 
 static unsigned long test_count = DEFAULT_EXECUTE_NUMBER;
+static unsigned long hit_num=0, miss_num=0;
 
 static memcached_return_t counter(const memcached_st *, memcached_result_st *, void *ctx) {
   auto c = static_cast<size_t *>(ctx);
@@ -141,8 +142,10 @@ static size_t execute_get(const client_options &opt, memcached_st &memc, const k
     }
 
     if (rc == MEMCACHED_SUCCESS) {
+      ++hit_num;
       continue;
     }
+    ++miss_num;
 
     // Cache miss - query PostgreSQL
     std::string query = "SELECT value FROM test WHERE key = $1";
@@ -398,6 +401,10 @@ int main(int argc, char *argv[]) {
               << "Time to get" << "        " << align << count << " keys by " << std::setw(4)
               << concurrency << " threads:  " << align << time_format(test_elapsed).count()
               << " seconds.\n";
+
+    std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(test_count)
+              << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(test_count)
+              << "%)" << std::endl;
 
     std::cout << "--------------------------------------------------------------------\n"
               << "Time total:                                    " << align << std::setw(12)

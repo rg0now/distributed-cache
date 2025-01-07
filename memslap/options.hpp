@@ -318,7 +318,7 @@ public:
     // Prepare our parameterized query for cache-aside lookups
     PGresult *res = PQprepare(postgres.conn,
                               "cache_lookup",
-                              "SELECT value FROM cache_table WHERE key = $1",
+                              "SELECT value FROM test WHERE key = $1",
                               1,  // 1 parameter
                               NULL); // Let server infer parameter type
 

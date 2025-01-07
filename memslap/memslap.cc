@@ -255,12 +255,14 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  if (opt.num_keys > test_count) {
-    if (!opt.isset("quiet")) {
-      std::cerr << "Number of unique keys must be less than or equal to execute number\n";
-    }
-    exit(EXIT_FAILURE);
-  }
+  // if (opt.num_keys > test_count) {
+  //   if (!opt.isset("quiet")) {
+  //     std::cerr << "Number of unique keys (" << opt.num_keys <<
+  //       ") must be less than or equal to execute number (" <<
+  //       test_count << ")" << std::endl;
+  //   }
+  //   exit(EXIT_FAILURE);
+  // }
 
   memcached_st memc;
   if (!check_memcached(opt, memc)) {

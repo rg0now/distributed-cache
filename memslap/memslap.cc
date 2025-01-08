@@ -216,30 +216,14 @@ public:
 
       if (rc == MEMCACHED_SUCCESS) {
         if (opt.isset("verbose")) {
-          std::string hostname("<NONE>");
-          const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
-          if (rc == MEMCACHED_SUCCESS) {
-            char buffer[1024];
-            sprintf(buffer, "%s:%d", server->_hostname, server->port());
-            hostname=std::string(buffer);
-          }
-          std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
-                    << hostname << std::endl;
+          std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
         }
         ++_stats.hit_num;
         continue;
       }
 
       if (opt.isset("verbose")) {
-        std::string hostname("<NONE>");
-        const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
-        if (rc == MEMCACHED_SUCCESS) {
-          char buffer[1024];
-          sprintf(buffer, "%s:%d", server->_hostname, server->port());
-          hostname=std::string(buffer);
-        }
-        std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
-                  << hostname << std::endl;
+        std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
       }
       ++_stats.miss_num;
 

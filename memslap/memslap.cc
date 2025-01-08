@@ -455,21 +455,22 @@ int main(int argc, char *argv[]) {
   auto count = 0ul;
   auto test_start = time_clock::now();
   wakeup.store(true, std::memory_order_release);
-  unsigned long hit_num=0, miss_num=0, retrieved=0;
+  unsigned long hit_num=0, miss_num=0;
+  double retrieved=0.0;
   for (auto &thread : threads) {
     count += thread->complete();
     auto stats = thread->get_stats();
     hit_num += stats.hit_num ;
     miss_num += stats.miss_num;
-    retrieved += stats.retrieved;
+    retrieved += (double)stats.retrieved;
   }
   auto test_elapsed = time_clock::now() - test_start;
 
   if (!opt.isset("quiet")) {
     std::cout << "--------------------------------------------------------------------\n"
-              << "Time to get" << "        " << align << count << " keys by " << std::setw(4)
-              << concurrency << " threads:  " << align << time_format(test_elapsed).count()
-              << " seconds.\n";
+              << "Time to make " <<  std::setw(6) << std::scientific << retrieved << " get queries by "
+              << std::fixed << concurrency << " threads:    "
+              << align << time_format(test_elapsed).count() << " seconds.\n";
 
     std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(retrieved)
               << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(retrieved)

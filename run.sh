@@ -8,7 +8,7 @@ KEYS=$2
 for i in {1..10}; do
     SERVERS="localhost:11211"
     if ((i > 1)); then
-        for (( j=1; j<=${i}; j++ )); do
+        for (( j=2; j<=${i}; j++ )); do
             PORT=$((11210+j))
             SERVERS="${SERVERS},localhost:${PORT}"
         done

@@ -257,7 +257,6 @@ public:
       }
 
       PQclear(res);
-      ++_stats.retrieved;
     }
   }
 

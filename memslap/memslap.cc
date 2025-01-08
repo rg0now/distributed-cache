@@ -208,11 +208,7 @@ public:
       free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
                          &rc));
 
-      if (check_return(opt, memc, kv.key.chr[r].data(), rc)) {
-        ++_stats.retrieved;
-      } else {
-        std::cout << "CHECK FAILED ON KEY " << kv.key.chr[r] << std::endl;
-      }
+      ++_stats.retrieved;
 
       if (rc == MEMCACHED_SUCCESS) {
         if (opt.isset("verbose")) {

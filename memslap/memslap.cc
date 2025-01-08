@@ -163,9 +163,12 @@ public:
 
   // warmup cache: this may rewrite keys if memcached does not have enough memory
   // WARNING: do not call on all threads
-  int init_cache() {
+  int init_cache(unsigned long num, unsigned long index) {
     // For each execution, randomly select from our pool of keys
     for (auto i = 0u; i < kv.num; ++i) {
+      if (i%num != index){
+        continue; // only deal with part of the keys
+      }
       // Query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";
       const char *param_values[1] = {kv.key.chr[i].data()};
@@ -431,12 +434,14 @@ int main(int argc, char *argv[]) {
               << " keys ...\n";
   }
   keyval_start = time_clock::now();
-  if (threads[0]->init_cache() < 0) {
+  for (auto i = 0ul; i < concurrency; ++i) {
+    if (threads[i]->init_cache(concurrency, i) < 0) {
       if (!opt.isset("quiet")) {
-        std::cerr << "Failed to warmup cache\n";
+        std::cerr << "Failed to warmup cache at thread " << i << " out of " << concurrency << "threads\n";
       }
       memcached_free(&memc);
       exit(EXIT_FAILURE);
+  }
   }
   keyval_elapsed = time_clock::now() - keyval_start;
 

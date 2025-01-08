@@ -15,7 +15,7 @@ for i in {1..10}; do
     fi
     
     ./memslap/memslap -s "$SERVERS" -F -t get --pg-host=localhost --pg-port=5432 --pg-db=test \
-                      --pg-user=postgres --pg-pass=test -e $EXEC -k $KEYS -c 32
+                      --pg-user=postgres --pg-pass=test -e $EXEC -k $KEYS -c 256
 done
 
 exit 0

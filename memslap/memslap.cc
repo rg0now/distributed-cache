@@ -188,10 +188,8 @@ public:
         std::string pg_value = PQgetvalue(res, 0, 0);
         memcached_return_t rc = memcached_set(&memc, kv.key.chr[i].data(), kv.key.chr[i].size(),
                                               pg_value.data(), pg_value.size(), 0, 0);
-        if (rc != MEMCACHED_SUCCESS) {
-          std::cerr << "ERROR: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
-          PQclear(res);
-        return -1;
+        if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
+          std::cerr << "WARNING: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
         }
       }
       PQclear(res);
@@ -225,6 +223,7 @@ public:
         std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
       }
       ++_stats.miss_num;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
       // Cache miss - query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";

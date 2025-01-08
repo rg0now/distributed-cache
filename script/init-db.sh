@@ -14,7 +14,7 @@ echo "Start PostgreSQL server"
 sudo pg_ctlcluster $VERSION main restart -f
 
 echo "Change password"
-sudo -u postgres psql -h localhost -c "ALTER USER postgres WITH PASSWORD 'test';"
+psql -h localhost -U postgres -c "ALTER USER postgres WITH PASSWORD 'test';"
 
 echo "Create database"
 psql -h localhost -U postgres -c 'CREATE DATABASE "test"'

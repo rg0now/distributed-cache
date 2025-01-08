@@ -37,7 +37,6 @@ public:
     const char *dbname;
     const char *user;
     const char *password;
-    PGconn *conn;
   } postgres;
 
   struct extended_option {
@@ -64,11 +63,10 @@ public:
   , prog_vers{ver}
   , prog_desc{dsc}
   , prog_argp{arg}
-  , postgres{nullptr, "5432", nullptr, nullptr, nullptr, nullptr}
+  , postgres{nullptr, "5432", nullptr, nullptr, nullptr}
   {
-
     def("help", 'h', no_argument, "Print this help.")
-        .apply = [](const client_options &opt, const extended_option &ext, memcached_st *) {
+      .apply = [](const client_options &opt, const extended_option &ext, memcached_st *) {
       if (ext.set) {
         opt.print_help();
         exit(EXIT_SUCCESS);
@@ -76,7 +74,7 @@ public:
       return true;
     };
     def("version", 'V', no_argument, "Print program version.")
-        .apply = [](const client_options &opt, const extended_option &ext, memcached_st *) {
+      .apply = [](const client_options &opt, const extended_option &ext, memcached_st *) {
       if (ext.set) {
         opt.print_version();
         exit(EXIT_SUCCESS);
@@ -283,65 +281,6 @@ public:
         opt.postgres.password = ext.arg;
         return true;
       };
-  }
-
-  bool connect_postgres() {
-    if (!postgres.host || !postgres.dbname) {
-      // PostgreSQL connection is optional
-      return true;
-    }
-
-    std::string conninfo =
-      std::string("host=") + postgres.host +
-      " port=" + postgres.port +
-      " dbname=" + postgres.dbname;
-
-    if (postgres.user) {
-      conninfo += std::string(" user=") + postgres.user;
-    }
-    if (postgres.password) {
-      conninfo += std::string(" password=") + postgres.password;
-    }
-
-    postgres.conn = PQconnectdb(conninfo.c_str());
-
-    if (PQstatus(postgres.conn) != CONNECTION_OK) {
-      if (!isset("quiet")) {
-        std::cerr << "PostgreSQL connection failed: "
-                  << PQerrorMessage(postgres.conn) << "\n";
-      }
-      PQfinish(postgres.conn);
-      postgres.conn = nullptr;
-      return false;
-    }
-
-    // Prepare our parameterized query for cache-aside lookups
-    PGresult *res = PQprepare(postgres.conn,
-                              "cache_lookup",
-                              "SELECT value FROM test WHERE key = $1",
-                              1,  // 1 parameter
-                              NULL); // Let server infer parameter type
-
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-      if (!isset("quiet")) {
-        std::cerr << "Failed to prepare query: "
-                  << PQerrorMessage(postgres.conn) << "\n";
-      }
-      PQclear(res);
-      PQfinish(postgres.conn);
-      postgres.conn = nullptr;
-      return false;
-    }
-
-    PQclear(res);
-    return true;
-  }
-
-  ~client_options() {
-    if (postgres.conn) {
-      PQfinish(postgres.conn);
-      postgres.conn = nullptr;
-    }
   }
 
   extended_option &def(option opt, std::string help) {

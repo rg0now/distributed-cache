@@ -38,7 +38,6 @@
 static std::atomic_bool wakeup;
 
 static unsigned long test_count = DEFAULT_EXECUTE_NUMBER;
-static unsigned long hit_num=0, miss_num=0;
 
 static memcached_return_t counter(const memcached_st *, memcached_result_st *, void *ctx) {
   auto c = static_cast<size_t *>(ctx);
@@ -81,125 +80,7 @@ struct keyval_st {
   // }
 };
 
-// warmup cache: this may rewrite keys if memcached does not have enough memory
-static int init_cache(const client_options &opt, memcached_st &memc, const keyval_st &kv) {
-  // For each execution, randomly select from our pool of keys
-  for (auto i = 0u; i < kv.num; ++i) {
-    // Query PostgreSQL
-    std::string query = "SELECT value FROM test WHERE key = $1";
-    const char *param_values[1] = {kv.key.chr[i].data()};
-    const int param_lengths[1] = {static_cast<int>(kv.key.chr[i].size())};
-    const int param_formats[1] = {0}; // text format
-
-    PGresult *res = PQexecParams(opt.postgres.conn, query.data(), 1, nullptr, param_values,
-                                 param_lengths, param_formats, 0);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
-      std::cerr << "ERROR: key " << kv.key.chr[i] << " not found in database" << std::endl;
-      PQclear(res);
-      return -1;
-    }
-
-    if (PQntuples(res) > 0) {
-      std::string pg_value = PQgetvalue(res, 0, 0);
-      memcached_return_t rc = memcached_set(&memc, kv.key.chr[i].data(), kv.key.chr[i].size(),
-                                            pg_value.data(), pg_value.size(), 0, 0);
-      if (rc != MEMCACHED_SUCCESS) {
-        std::cerr << "ERROR: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
-        PQclear(res);
-        return -1;
-      }
-    }
-    PQclear(res);
-  }
-
-  return 0;
-}
-
-static size_t execute_get(const client_options &opt, memcached_st &memc, const keyval_st &kv) {
-  size_t retrieved = 0;
-  random64 rnd{};
-
-  // For each execution, randomly select from our pool of keys
-  for (auto i = 0u; i < test_count; ++i) {
-    memcached_return_t rc;
-    auto r = rnd(0, kv.num); // Select random key from our pool
-
-    free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
-                       &rc));
-
-    if (check_return(opt, memc, kv.key.chr[r].data(), rc)) {
-      ++retrieved;
-    } else {
-      std::cout << "CHECK FAILED ON KEY " << kv.key.chr[r] << std::endl;
-    }
-
-    if (rc == MEMCACHED_SUCCESS) {
-      if (opt.isset("verbose")) {
-        std::string hostname("<NONE>");
-        const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
-        if (rc == MEMCACHED_SUCCESS) {
-          char buffer[1024];
-          sprintf(buffer, "%s:%d", server->_hostname, server->port());
-          hostname=std::string(buffer);
-        }
-        std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
-                  << hostname << std::endl;
-      }
-      ++hit_num;
-      continue;
-    }
-
-    if (opt.isset("verbose")) {
-      std::string hostname("<NONE>");
-      const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
-      if (rc == MEMCACHED_SUCCESS) {
-        char buffer[1024];
-        sprintf(buffer, "%s:%d", server->_hostname, server->port());
-        hostname=std::string(buffer);
-      }
-      std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
-                << hostname << std::endl;
-    }
-    ++miss_num;
-
-    // Cache miss - query PostgreSQL
-    std::string query = "SELECT value FROM test WHERE key = $1";
-    const char *param_values[1] = {kv.key.chr[r].data()};
-    const int param_lengths[1] = {static_cast<int>(kv.key.chr[r].size())};
-    const int param_formats[1] = {0}; // text format
-
-    PGresult *res = PQexecParams(opt.postgres.conn, query.data(), 1, nullptr, param_values,
-                                 param_lengths, param_formats, 0);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
-      std::cerr << "WARNING: key " << kv.key.chr[r] << " not found in database" << std::endl;
-      PQclear(res);
-      continue;
-    }
-
-    if (opt.isset("verbose")) {
-      std::cout << "STORING KEY IN CACHE: " << kv.key.chr[r] << std::endl;
-    }
-
-    if (PQntuples(res) > 0) {
-      std::string pg_value = PQgetvalue(res, 0, 0);
-      rc = memcached_set(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(),
-                         pg_value.data(), pg_value.size(), 0, 0);
-
-      if (rc != MEMCACHED_SUCCESS) {
-        std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
-        continue;
-      }
-    }
-
-    PQclear(res);
-    ++retrieved;
-  }
-
-  return retrieved;
-}
-
+typedef struct { unsigned long hit_num, miss_num, retrieved; } stats;
 class thread_context {
 public:
   thread_context(const client_options &opt_, const memcached_st &memc_, const keyval_st &kv_)
@@ -208,16 +89,196 @@ public:
   , count{}
   , root(memc_)
   , memc{}
-  , thread([this] { execute(); }) {}
+  , _stats{0,0,0}
+  , thread([this] { execute(); })
+  {}
 
   ~thread_context() {
-    memcached_free(&memc);
-  }
+    if (conn) {
+      PQfinish(conn);
+      conn = nullptr;
+    }
+ }
 
   size_t complete() {
     thread.join();
     return count;
   }
+
+  bool init() {
+    // clone memcached connection
+    memcached_clone(&memc, &root);
+
+    // open postgres connection
+    if (!opt.postgres.host || !opt.postgres.dbname) {
+      // PostgreSQL connection is optional
+      return true;
+    }
+
+    std::string conninfo =
+      std::string("host=") + opt.postgres.host +
+      " port=" + opt.postgres.port +
+      " dbname=" + opt.postgres.dbname;
+
+    if (opt.postgres.user) {
+      conninfo += std::string(" user=") + opt.postgres.user;
+    }
+    if (opt.postgres.password) {
+      conninfo += std::string(" password=") + opt.postgres.password;
+    }
+
+    conn = PQconnectdb(conninfo.c_str());
+
+    if (PQstatus(conn) != CONNECTION_OK) {
+      if (!opt.isset("quiet")) {
+        std::cerr << "PostgreSQL connection failed: "
+                  << PQerrorMessage(conn) << "\n";
+      }
+      PQfinish(conn);
+      conn = nullptr;
+      return false;
+    }
+
+    // Prepare our parameterized query for cache-aside lookups
+    PGresult *res = PQprepare(conn,
+                              "cache_lookup",
+                              "SELECT value FROM test WHERE key = $1",
+                              1,  // 1 parameter
+                              NULL); // Let server infer parameter type
+
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+      if (!opt.isset("quiet")) {
+        std::cerr << "Failed to prepare query: "
+                  << PQerrorMessage(conn) << "\n";
+      }
+      PQclear(res);
+      PQfinish(conn);
+      conn = nullptr;
+      return false;
+    }
+
+    PQclear(res);
+    return true;
+  }
+
+  // warmup cache: this may rewrite keys if memcached does not have enough memory
+  // WARNING: do not call on all threads
+  int init_cache() {
+    // For each execution, randomly select from our pool of keys
+    for (auto i = 0u; i < kv.num; ++i) {
+      // Query PostgreSQL
+      std::string query = "SELECT value FROM test WHERE key = $1";
+      const char *param_values[1] = {kv.key.chr[i].data()};
+      const int param_lengths[1] = {static_cast<int>(kv.key.chr[i].size())};
+      const int param_formats[1] = {0}; // text format
+
+      PGresult *res = PQexecParams(conn, query.data(), 1, nullptr, param_values,
+                                   param_lengths, param_formats, 0);
+
+      if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
+        std::cerr << "ERROR: key " << kv.key.chr[i] << " not found in database" << std::endl;
+        PQclear(res);
+        return -1;
+      }
+
+      if (PQntuples(res) > 0) {
+        std::string pg_value = PQgetvalue(res, 0, 0);
+        memcached_return_t rc = memcached_set(&memc, kv.key.chr[i].data(), kv.key.chr[i].size(),
+                                              pg_value.data(), pg_value.size(), 0, 0);
+        if (rc != MEMCACHED_SUCCESS) {
+          std::cerr << "ERROR: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
+          PQclear(res);
+        return -1;
+        }
+      }
+      PQclear(res);
+    }
+
+    return 0;
+  }
+
+  void execute_get() {
+    random64 rnd{};
+
+    // For each execution, randomly select from our pool of keys
+    for (auto i = 0u; i < test_count; ++i) {
+      memcached_return_t rc;
+      auto r = rnd(0, kv.num); // Select random key from our pool
+
+      free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
+                         &rc));
+
+      if (check_return(opt, memc, kv.key.chr[r].data(), rc)) {
+        ++_stats.retrieved;
+      } else {
+        std::cout << "CHECK FAILED ON KEY " << kv.key.chr[r] << std::endl;
+      }
+
+      if (rc == MEMCACHED_SUCCESS) {
+        if (opt.isset("verbose")) {
+          std::string hostname("<NONE>");
+          const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
+          if (rc == MEMCACHED_SUCCESS) {
+            char buffer[1024];
+            sprintf(buffer, "%s:%d", server->_hostname, server->port());
+            hostname=std::string(buffer);
+          }
+          std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
+                    << hostname << std::endl;
+        }
+        ++_stats.hit_num;
+        continue;
+      }
+
+      if (opt.isset("verbose")) {
+        std::string hostname("<NONE>");
+        const memcached_instance_st *server = memcached_server_by_key(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), &rc);
+        if (rc == MEMCACHED_SUCCESS) {
+          char buffer[1024];
+          sprintf(buffer, "%s:%d", server->_hostname, server->port());
+          hostname=std::string(buffer);
+        }
+        std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE USING SERVER "
+                  << hostname << std::endl;
+      }
+      ++_stats.miss_num;
+
+      // Cache miss - query PostgreSQL
+      std::string query = "SELECT value FROM test WHERE key = $1";
+      const char *param_values[1] = {kv.key.chr[r].data()};
+      const int param_lengths[1] = {static_cast<int>(kv.key.chr[r].size())};
+      const int param_formats[1] = {0}; // text format
+
+      PGresult *res = PQexecParams(conn, query.data(), 1, nullptr, param_values,
+                                   param_lengths, param_formats, 0);
+
+      if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
+        std::cerr << "WARNING: key " << kv.key.chr[r] << " not found in database" << std::endl;
+        PQclear(res);
+        continue;
+      }
+
+      if (opt.isset("verbose")) {
+        std::cout << "STORING KEY IN CACHE: " << kv.key.chr[r] << std::endl;
+      }
+
+      if (PQntuples(res) > 0) {
+        std::string pg_value = PQgetvalue(res, 0, 0);
+        rc = memcached_set(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(),
+                           pg_value.data(), pg_value.size(), 0, 0);
+
+        if (rc != MEMCACHED_SUCCESS) {
+          std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
+          continue;
+        }
+      }
+
+      PQclear(res);
+      ++_stats.retrieved;
+    }
+  }
+
+  stats get_stats(){return _stats;}
 
 private:
   const client_options &opt;
@@ -226,15 +287,14 @@ private:
   const memcached_st &root;
   memcached_st memc;
   std::thread thread;
+  PGconn *conn;
+  stats _stats;
 
   void execute() {
-    memcached_clone(&memc, &root);
-
     while (!wakeup.load(std::memory_order_acquire)) {
       std::this_thread::yield();
     }
-
-    count = execute_get(opt, memc, kv);
+    execute_get();
   }
 };
 
@@ -323,11 +383,7 @@ int main(int argc, char *argv[]) {
   auto total_start = time_clock::now();
   std::cout << std::fixed << std::setprecision(3);
 
-  // Initialize PostgreSQL connection if host and db are specified
-  if (!opt.connect_postgres()) {
-    memcached_free(&memc);
-    exit(EXIT_FAILURE);
-  }
+  //------- FLUSH
 
   if (opt.isset("flush")) {
     if (opt.isset("verbose")) {
@@ -344,11 +400,13 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
     if (!opt.isset("quiet")) {
-      std::cout << "Time to flush      " << align << memcached_server_count(&memc)
+      std::cout << "Time to flush        " << align << memcached_server_count(&memc)
                 << " servers:               " << align << time_format(flush_elapsed).count()
                 << " seconds.\n";
     }
   }
+
+  //------- GENERATE KEYS
 
   if (opt.isset("verbose")) {
     std::cout << "- Generating 16 byte keys with 32 byte data for " << opt.num_keys
@@ -359,30 +417,12 @@ int main(int argc, char *argv[]) {
   auto keyval_elapsed = time_clock::now() - keyval_start;
 
   if (!opt.isset("quiet")) {
-    std::cout << "Time to generate   " << align << opt.num_keys
+    std::cout << "Time to generate     " << align << opt.num_keys
               << " test keys:             " << align << time_format(keyval_elapsed).count()
               << " seconds.\n";
   }
 
-  if (opt.isset("verbose")) {
-    std::cout << "- Initializing cache for " << opt.num_keys
-              << " keys ...\n";
-  }
-  keyval_start = time_clock::now();
-  if (init_cache(opt, memc, kv) < 0) {
-      if (!opt.isset("quiet")) {
-        std::cerr << "Failed to init cache\n";
-      }
-      memcached_free(&memc);
-      exit(EXIT_FAILURE);
-  }
-  keyval_elapsed = time_clock::now() - keyval_start;
-
-  if (!opt.isset("quiet")) {
-    std::cout << "Time to init cache " << align << opt.num_keys
-              << " test keys:             " << align << time_format(keyval_elapsed).count()
-              << " seconds.\n";
-  }
+  //------- INIT
 
   if (opt.isset("verbose")) {
     std::cout << "- Starting " << concurrency << " threads ...\n";
@@ -391,14 +431,43 @@ int main(int argc, char *argv[]) {
   std::vector<thread_context *> threads{};
   threads.reserve(concurrency);
   for (auto i = 0ul; i < concurrency; ++i) {
-    threads.push_back(new thread_context(opt, memc, kv));
+    auto t = new thread_context(opt, memc, kv);
+    if (!t->init()) {
+      exit(EXIT_FAILURE);
+    }
+    threads.push_back(t);
   }
   auto thread_elapsed = time_clock::now() - thread_start;
   if (!opt.isset("quiet")) {
-    std::cout << "Time to start      " << align << concurrency
+    std::cout << "Time to start        " << align << concurrency
               << " threads:                  " << time_format(thread_elapsed).count()
               << " seconds.\n";
   }
+
+  //------- WARMUP
+
+  if (opt.isset("verbose")) {
+    std::cout << "- Warming up cache for " << opt.num_keys
+              << " keys ...\n";
+  }
+  keyval_start = time_clock::now();
+  if (threads[0]->init_cache() < 0) {
+      if (!opt.isset("quiet")) {
+        std::cerr << "Failed to warmup cache\n";
+      }
+      memcached_free(&memc);
+      exit(EXIT_FAILURE);
+  }
+  keyval_elapsed = time_clock::now() - keyval_start;
+
+  if (!opt.isset("quiet")) {
+    std::cout << "Time to warmup cache " << align << opt.num_keys
+              << " test keys:             " << align << time_format(keyval_elapsed).count()
+              << " seconds.\n";
+  }
+
+  //------- TEST
+
   if (opt.isset("verbose")) {
     std::cout << "- Starting test: " << test_count << " x " << opt.argof("test") << " x "
               << concurrency << " ...\n";
@@ -406,9 +475,13 @@ int main(int argc, char *argv[]) {
   auto count = 0ul;
   auto test_start = time_clock::now();
   wakeup.store(true, std::memory_order_release);
+  unsigned long hit_num=0, miss_num=0, retrieved=0;
   for (auto &thread : threads) {
     count += thread->complete();
-    delete thread;
+    auto stats = thread->get_stats();
+    hit_num += stats.hit_num ;
+    miss_num += stats.miss_num;
+    retrieved += stats.retrieved;
   }
   auto test_elapsed = time_clock::now() - test_start;
 
@@ -418,13 +491,18 @@ int main(int argc, char *argv[]) {
               << concurrency << " threads:  " << align << time_format(test_elapsed).count()
               << " seconds.\n";
 
-    std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(test_count)
-              << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(test_count)
+    std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(retrieved)
+              << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(retrieved)
               << "%)" << std::endl;
 
     std::cout << "--------------------------------------------------------------------\n"
               << "Time total:                                    " << align << std::setw(12)
               << time_format(time_clock::now() - total_start).count() << " seconds.\n";
   }
+
+  for (auto &thread : threads) {
+    delete thread;
+  }
+  memcached_free(&memc);
   exit(EXIT_SUCCESS);
 }

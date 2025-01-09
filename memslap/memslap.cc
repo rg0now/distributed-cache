@@ -260,12 +260,12 @@ public:
         if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
           std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
 
-          auto elapsed = time_clock::now() - start;
-          _stats.db_lookup_duration += elapsed;
           PQclear(res);
-
           continue;
         }
+
+        auto elapsed = time_clock::now() - start;
+        _stats.db_lookup_duration += elapsed;
       }
       PQclear(res);
     }
@@ -477,9 +477,9 @@ int main(int argc, char *argv[]) {
   for (auto &thread : threads) {
     count += thread->complete();
     auto stats = thread->get_stats();
-    std::cout << stats.hit_num << ", " << stats.miss_num << ", "
-              << stats.retrieved << ", " << stats.cache_lookup_duration.count() << ", "
-              << stats.db_lookup_duration.count() << std::endl;
+    // std::cout << stats.hit_num << ", " << stats.miss_num << ", "
+    //           << stats.retrieved << ", " << stats.cache_lookup_duration.count() << ", "
+    //           << stats.db_lookup_duration.count() << std::endl;
     hit_num += stats.hit_num ;
     miss_num += stats.miss_num;
     retrieved += (double)stats.retrieved;

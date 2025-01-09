@@ -20,4 +20,6 @@
 using time_clock = std::chrono::high_resolution_clock;
 using time_point = std::chrono::time_point<time_clock>;
 using time_format = std::chrono::duration<double, std::ratio<1,1>>;
-using time_format_ms = std::chrono::duration<double, std::ratio<1,1000>>;
+using time_format_ms = std::chrono::duration<double, std::ratio<1, 1000>>;
+using time_format_us = std::chrono::duration<double, std::ratio<1, 1000000>>;
+using time_format_ns = std::chrono::duration<double, std::ratio<1, 1000000000>>;

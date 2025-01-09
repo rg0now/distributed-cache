@@ -80,7 +80,11 @@ struct keyval_st {
   // }
 };
 
-typedef struct { unsigned long hit_num, miss_num, retrieved; } stats;
+typedef struct {
+  unsigned long hit_num, miss_num, retrieved;
+  time_format_us cache_lookup_duration, db_lookup_duration; // avg time for cache lookup vs cache+db lookup
+} stats;
+
 class thread_context {
 public:
   thread_context(const client_options &opt_, const memcached_st &memc_, const keyval_st &kv_)
@@ -89,7 +93,7 @@ public:
   , count{}
   , root(memc_)
   , memc{}
-  , _stats{0,0,0}
+  , _stats{0,0,0,time_format_us(0),time_format_us(0)}
   , thread([this] { execute(); })
   {}
 
@@ -206,9 +210,9 @@ public:
       memcached_return_t rc;
       auto r = rnd(0, kv.num); // Select random key from our pool
 
+      auto start = time_clock::now();
       free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
                          &rc));
-
       ++_stats.retrieved;
 
       if (rc == MEMCACHED_SUCCESS) {
@@ -216,14 +220,18 @@ public:
           std::cout << "FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
         }
         ++_stats.hit_num;
+        auto elapsed = time_clock::now() - start;
+        _stats.cache_lookup_duration = _stats.cache_lookup_duration + elapsed;
         continue;
       }
+
+      ++_stats.miss_num;
 
       if (opt.isset("verbose")) {
         std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
       }
-      ++_stats.miss_num;
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+      start = time_clock::now();
 
       // Cache miss - query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";
@@ -251,10 +259,14 @@ public:
 
         if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
           std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
+
+          auto elapsed = time_clock::now() - start;
+          _stats.db_lookup_duration += elapsed;
+          PQclear(res);
+
           continue;
         }
       }
-
       PQclear(res);
     }
   }
@@ -458,15 +470,25 @@ int main(int argc, char *argv[]) {
   auto count = 0ul;
   auto test_start = time_clock::now();
   wakeup.store(true, std::memory_order_release);
+
   unsigned long hit_num=0, miss_num=0;
   double retrieved=0.0;
+  double cache_lookup_time = 0.0, db_lookup_time = 0.0;
   for (auto &thread : threads) {
     count += thread->complete();
     auto stats = thread->get_stats();
+    std::cout << stats.hit_num << ", " << stats.miss_num << ", "
+              << stats.retrieved << ", " << stats.cache_lookup_duration.count() << ", "
+              << stats.db_lookup_duration.count() << std::endl;
     hit_num += stats.hit_num ;
     miss_num += stats.miss_num;
     retrieved += (double)stats.retrieved;
+    cache_lookup_time += time_format_us(stats.cache_lookup_duration).count() / test_count;
+    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / test_count;
+    delete thread;
   }
+  cache_lookup_time /= concurrency;
+  db_lookup_time /= concurrency;
   auto test_elapsed = time_clock::now() - test_start;
 
   if (!opt.isset("quiet")) {
@@ -477,16 +499,15 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(retrieved)
               << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(retrieved)
-              << "%)" << std::endl;
+              << "%), #avg_cache_lookup_time="  << cache_lookup_time
+              << "ns, #avg_db_lookup_time="  << db_lookup_time
+              << "ns" << std::endl;
 
     std::cout << "--------------------------------------------------------------------\n"
               << "Time total:                                    " << align << std::setw(12)
               << time_format(time_clock::now() - total_start).count() << " seconds.\n";
   }
 
-  for (auto &thread : threads) {
-    delete thread;
-  }
   memcached_free(&memc);
   exit(EXIT_SUCCESS);
 }

@@ -484,7 +484,7 @@ int main(int argc, char *argv[]) {
     miss_num += stats.miss_num;
     retrieved += (double)stats.retrieved;
     cache_lookup_time += time_format_us(stats.cache_lookup_duration).count() / test_count;
-    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / test_count;
+    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / miss_num;
     delete thread;
   }
   cache_lookup_time /= concurrency;

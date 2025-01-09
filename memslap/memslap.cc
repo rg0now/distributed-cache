@@ -249,7 +249,7 @@ public:
         rc = memcached_set(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(),
                            pg_value.data(), pg_value.size(), 0, 0);
 
-        if (rc != MEMCACHED_SUCCESS) {
+        if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
           std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
           continue;
         }

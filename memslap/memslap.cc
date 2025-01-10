@@ -231,7 +231,7 @@ public:
       }
 
       ++_stats.miss_num;
-      start = time_clock::now();
+      auto restart = time_clock::now();
 
       // Cache miss - query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";
@@ -244,7 +244,7 @@ public:
 
       if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
         std::cerr << "WARNING: key " << kv.key.chr[r] << " not found in database" << std::endl;
-        auto elapsed = time_clock::now() - start;
+        auto elapsed = time_clock::now() - restart;
         _stats.db_lookup_duration += elapsed;
         PQclear(res);
         continue;
@@ -265,8 +265,8 @@ public:
                     <<  memcached_strerror(&memc, rc) << std::endl;
         }
       }
-      auto elapsed = time_clock::now() - start;
-      _stats.db_lookup_duration += elapsed;
+      auto reelapsed = time_clock::now() - restart;
+      _stats.db_lookup_duration += reelapsed;
       PQclear(res);
     }
   }
@@ -500,8 +500,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Stats: #hits=" << hit_num << " (rate=" << float(hit_num*100)/float(retrieved)
               << "%), #miss="  << miss_num << " (rate=" << float(miss_num*100)/float(retrieved)
               << "%), #avg_cache_lookup_time="  << cache_lookup_time
-              << "ns, #avg_db_lookup_time="  << db_lookup_time
-              << "ns" << std::endl;
+              << "us, #avg_db_lookup_time="  << db_lookup_time
+              << "us" << std::endl;
 
     std::cout << "--------------------------------------------------------------------\n"
               << "Time total:                                    " << align << std::setw(12)

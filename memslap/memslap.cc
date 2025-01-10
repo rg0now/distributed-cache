@@ -226,12 +226,11 @@ public:
         continue;
       }
 
-      ++_stats.miss_num;
-
       if (opt.isset("verbose")) {
         std::cout << "NOT FOUND KEY "  << kv.key.chr[r] << " IN CACHE" << std::endl;
       }
 
+      ++_stats.miss_num;
       start = time_clock::now();
 
       // Cache miss - query PostgreSQL
@@ -245,6 +244,8 @@ public:
 
       if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
         std::cerr << "WARNING: key " << kv.key.chr[r] << " not found in database" << std::endl;
+        auto elapsed = time_clock::now() - start;
+        _stats.db_lookup_duration += elapsed;
         PQclear(res);
         continue;
       }
@@ -263,10 +264,9 @@ public:
           std::cerr << "WARNING: storing key " << kv.key.chr[i] << " in cache failed with error: "
                     <<  memcached_strerror(&memc, rc) << std::endl;
         }
-
-        auto elapsed = time_clock::now() - start;
-        _stats.db_lookup_duration += elapsed;
       }
+      auto elapsed = time_clock::now() - start;
+      _stats.db_lookup_duration += elapsed;
       PQclear(res);
     }
   }

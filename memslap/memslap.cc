@@ -193,7 +193,8 @@ public:
         memcached_return_t rc = memcached_set(&memc, kv.key.chr[i].data(), kv.key.chr[i].size(),
                                               pg_value.data(), pg_value.size(), 0, 0);
         if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
-          std::cerr << "WARNING: key " << kv.key.chr[i] << " could not be stored in cache" << std::endl;
+          std::cerr << "WARNING: storing key " << kv.key.chr[i] << " in cache failed with error: "
+                    <<  memcached_strerror(&memc, rc) << std::endl;
         }
       }
       PQclear(res);
@@ -257,11 +258,10 @@ public:
         rc = memcached_set(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(),
                            pg_value.data(), pg_value.size(), 0, 0);
 
-        if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
-          std::cerr << "WARNING: key " << kv.key.chr[r] << " could not be stored in cache" << std::endl;
-
-          PQclear(res);
-          continue;
+        if (rc != MEMCACHED_SUCCESS) {
+          // if (rc != MEMCACHED_SUCCESS && opt.isset("verbose")) {
+          std::cerr << "WARNING: storing key " << kv.key.chr[i] << " in cache failed with error: "
+                    <<  memcached_strerror(&memc, rc) << std::endl;
         }
 
         auto elapsed = time_clock::now() - start;

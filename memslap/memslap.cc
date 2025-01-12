@@ -83,6 +83,7 @@ struct keyval_st {
 typedef struct {
   unsigned long hit_num, miss_num, retrieved;
   time_format_us cache_lookup_duration, db_lookup_duration; // avg time for cache lookup vs cache+db lookup
+  time_format_us thread_elapsed; // total thread execution time
 } stats;
 
 class thread_context {
@@ -206,6 +207,8 @@ public:
   void execute_get() {
     random64 rnd{};
 
+    auto thread_start = time_clock::now();
+
     // For each execution, randomly select from our pool of keys
     for (auto i = 0u; i < test_count; ++i) {
       memcached_return_t rc;
@@ -269,6 +272,8 @@ public:
       _stats.db_lookup_duration += reelapsed;
       PQclear(res);
     }
+
+    _stats.thread_elapsed = time_clock::now() - thread_start;
   }
 
   stats get_stats(){return _stats;}
@@ -471,7 +476,10 @@ int main(int argc, char *argv[]) {
   auto test_start = time_clock::now();
   wakeup.store(true, std::memory_order_release);
 
-  unsigned long hit_num=0, miss_num=0;
+  if (!opt.isset("quiet")) {
+    std::cout << "--------------------------------------------------------------------\n";
+  }
+  unsigned long hit_num=0, miss_num=0, i=1;
   double retrieved=0.0;
   double cache_lookup_time = 0.0, db_lookup_time = 0.0;
   for (auto &thread : threads) {
@@ -480,11 +488,21 @@ int main(int argc, char *argv[]) {
     // std::cout << stats.hit_num << ", " << stats.miss_num << ", "
     //           << stats.retrieved << ", " << stats.cache_lookup_duration.count() << ", "
     //           << stats.db_lookup_duration.count() << std::endl;
-    hit_num += stats.hit_num ;
+    hit_num += stats.hit_num;
     miss_num += stats.miss_num;
     retrieved += (double)stats.retrieved;
-    cache_lookup_time += time_format_us(stats.cache_lookup_duration).count() / test_count;
-    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / miss_num;
+    cache_lookup_time += time_format_us(stats.cache_lookup_duration).count() / stats.hit_num;
+    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / stats.miss_num;
+
+    if (!opt.isset("quiet")) {
+      std::cout << "Thread " << i++ << "stats: #hits=" << hit_num << " (rate=" << float(stats.hit_num*100)/float(stats.retrieved)
+                << "%), #miss="  << miss_num << " (rate=" << float(stats.miss_num*100)/float(stats.retrieved)
+                << "%), #avg_cache_lookup_time="  << time_format_us(stats.cache_lookup_duration).count() / stats.hit_num
+                << "us, #avg_db_lookup_time="  << time_format_us(stats.db_lookup_duration).count() / stats.miss_num
+                << "us, #thread_elapsed_time="  << time_format(stats.thread_elapsed).count()
+                << "s" << std::endl;
+    }
+
     delete thread;
   }
   cache_lookup_time /= concurrency;

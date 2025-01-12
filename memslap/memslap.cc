@@ -337,17 +337,17 @@ int main(int argc, char *argv[]) {
         return true;
       };
   opt.add("udp", 'X', no_argument, "Use UDP.").apply =
-      [](const client_options &opt_, const client_options::extended_option &ext,
-         memcached_st *memc) {
-        if (MEMCACHED_SUCCESS != memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_USE_UDP, ext.set))
+    [](const client_options &opt_, const client_options::extended_option &ext,
+       memcached_st *memc) {
+      if (MEMCACHED_SUCCESS != memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_USE_UDP, ext.set))
         {
           if (!opt_.isset("quiet")) {
             std::cerr << memcached_last_error_message(memc) << "\n";
           }
           return false;
         }
-        return true;
-      };
+      return true;
+    };
   opt.add("flush", 'F', no_argument, "Flush all servers prior test.");
   opt.add("test", 't', required_argument, "Test to perform (options: get,mget,set; default: get).");
   opt.add("concurrency", 'c', required_argument,
@@ -495,8 +495,8 @@ int main(int argc, char *argv[]) {
     db_lookup_time += time_format_us(stats.db_lookup_duration).count() / stats.miss_num;
 
     if (!opt.isset("quiet")) {
-      std::cout << "Thread " << i++ << "stats: #hits=" << hit_num << " (rate=" << float(stats.hit_num*100)/float(stats.retrieved)
-                << "%), #miss="  << miss_num << " (rate=" << float(stats.miss_num*100)/float(stats.retrieved)
+      std::cout << "Thread " << i++ << "stats: #hits=" << stats.hit_num << " (rate=" << float(stats.hit_num*100)/float(stats.retrieved)
+                << "%), #miss="  << stats.miss_num << " (rate=" << float(stats.miss_num*100)/float(stats.retrieved)
                 << "%), #avg_cache_lookup_time="  << time_format_us(stats.cache_lookup_duration).count() / stats.hit_num
                 << "us, #avg_db_lookup_time="  << time_format_us(stats.db_lookup_duration).count() / stats.miss_num
                 << "us, #thread_elapsed_time="  << time_format(stats.thread_elapsed).count()

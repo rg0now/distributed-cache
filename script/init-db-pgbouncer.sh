@@ -3,10 +3,11 @@
 TABLE_DUMP=test_table.dump
 export PGPASSWORD=test
 
-USAGE="init-db.sh <db-version> <num-keys>"
-[ -z "$1" -o -z "$2" ] && echo $USAGE && exit 0
+USAGE="init-db.sh <db-version> <num-keys> <pgbouncer-pool-size>"
+[ -z "$1" -o -z "$2"  -o -z "$3" ] && echo $USAGE && exit 0
 VERSION="$1"
 KEY_NUM="$2"
+PGBOUNCER_POOL_SIZE="$3"
 
 cd "$(dirname "$0")"
 
@@ -32,7 +33,10 @@ fi
 echo "Start pgbouncer"
 sudo killall pgbouncer
 sleep 1
-/usr/sbin/pgbouncer -d pgbouncer.ini -v
+
+sed "s/^max_user_connections=.*$/max_user_connections=${PGBOUNCER_POOL_SIZE}/" pgbouncer.ini > pgbouncer_custom.ini
+
+/usr/sbin/pgbouncer -d pgbouncer_custom.ini -v
 
 exit 1
 

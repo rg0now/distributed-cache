@@ -82,7 +82,7 @@ struct keyval_st {
 
 typedef struct {
   unsigned long hit_num, miss_num, retrieved;
-  time_format_us cache_lookup_duration, db_lookup_duration; // avg time for cache lookup vs cache+db lookup
+  time_format_us cache_lookup_duration, total_lookup_duration; // avg time for cache lookup vs cache+db lookup
   time_format_us thread_elapsed; // total thread execution time
 } stats;
 
@@ -174,6 +174,9 @@ public:
       if (i%num != index){
         continue; // only deal with part of the keys
       }
+
+      // std::cout << "Thread " << index << " initializing key " << kv.key.chr[i].data() << std::endl;
+
       // Query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";
       const char *param_values[1] = {kv.key.chr[i].data()};
@@ -215,6 +218,8 @@ public:
       auto r = rnd(0, kv.num); // Select random key from our pool
 
       auto start = time_clock::now();
+      auto restart = time_clock::now();
+
       free(memcached_get(&memc, kv.key.chr[r].data(), kv.key.chr[r].size(), nullptr, nullptr,
                          &rc));
       ++_stats.retrieved;
@@ -234,7 +239,6 @@ public:
       }
 
       ++_stats.miss_num;
-      auto restart = time_clock::now();
 
       // Cache miss - query PostgreSQL
       std::string query = "SELECT value FROM test WHERE key = $1";
@@ -248,7 +252,7 @@ public:
       if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
         std::cerr << "WARNING: key " << kv.key.chr[r] << " not found in database" << std::endl;
         auto elapsed = time_clock::now() - restart;
-        _stats.db_lookup_duration += elapsed;
+        _stats.total_lookup_duration += elapsed;
         PQclear(res);
         continue;
       }
@@ -269,7 +273,7 @@ public:
         }
       }
       auto reelapsed = time_clock::now() - restart;
-      _stats.db_lookup_duration += reelapsed;
+      _stats.total_lookup_duration += reelapsed;
       PQclear(res);
     }
 
@@ -487,18 +491,18 @@ int main(int argc, char *argv[]) {
     auto stats = thread->get_stats();
     // std::cout << stats.hit_num << ", " << stats.miss_num << ", "
     //           << stats.retrieved << ", " << stats.cache_lookup_duration.count() << ", "
-    //           << stats.db_lookup_duration.count() << std::endl;
+    //           << stats.total_lookup_duration.count() << std::endl;
     hit_num += stats.hit_num;
     miss_num += stats.miss_num;
     retrieved += (double)stats.retrieved;
     cache_lookup_time += time_format_us(stats.cache_lookup_duration).count() / stats.hit_num;
-    db_lookup_time += time_format_us(stats.db_lookup_duration).count() / stats.miss_num;
+    db_lookup_time += time_format_us(stats.total_lookup_duration).count() / stats.retrieved;
 
     if (!opt.isset("quiet")) {
       std::cout << "Thread " << i++ << "stats: #hits=" << stats.hit_num << " (rate=" << float(stats.hit_num*100)/float(stats.retrieved)
                 << "%), #miss="  << stats.miss_num << " (rate=" << float(stats.miss_num*100)/float(stats.retrieved)
                 << "%), #avg_cache_lookup_time="  << time_format_us(stats.cache_lookup_duration).count() / stats.hit_num
-                << "us, #avg_db_lookup_time="  << time_format_us(stats.db_lookup_duration).count() / stats.miss_num
+                << "us, #avg_total_lookup_time="  << time_format_us(stats.total_lookup_duration).count() / stats.retrieved
                 << "us, #thread_elapsed_time="  << time_format(stats.thread_elapsed).count()
                 << "s" << std::endl;
     }

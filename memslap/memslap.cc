@@ -440,7 +440,7 @@ int main(int argc, char *argv[]) {
   if (output_filename == "-") {
     output = &std::cout; // Use standard output
   } else {
-    outFile.open(output_filename);
+    outFile.open(output_filename, std::ios::app);
     if (!outFile) {
       std::cerr << "Error: Could not open file " << output_filename << " for writing." << std::endl;
       return 1;

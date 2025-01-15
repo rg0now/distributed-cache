@@ -1,0 +1,62 @@
+#+INCLUDE: header.org
+#+TITLE: Distributed caching: Initial results
+
+* Setup
+
+#+begin_src bash
+./run.sh 4000000 500000 run-4000000-500000.csv | tee /tmp/log
+#+end_src
+
+* Results
+#+TBLNAME:cache-time-per-cores
+| cores | hit(hash) | time(hash) | speedup(hash) | hit(rnd) |  time(rnd) | speedup(rnd) |
+|-------+-----------+------------+---------------+----------+------------+--------------|
+|     1 |  0.069675 | 944.457583 |            1. | 0.069927 | 940.458965 |           1. |
+|     2 |  0.139809 | 495.122914 |     1.9075215 | 0.069829 | 525.194254 |    1.7906878 |
+|     3 |  0.209446 | 349.319485 |     2.7037071 | 0.069964 | 391.834901 |    2.4001409 |
+|     4 |  0.279402 | 251.916703 |     3.7490868 | 0.069809 | 298.856878 |    3.1468540 |
+|     5 |  0.354443 | 183.050665 |     5.1595419 | 0.077560 | 226.251388 |    4.1566992 |
+|     6 |  0.423693 | 134.274174 |     7.0337992 | 0.069924 | 174.029519 |    5.4040198 |
+|     7 |  0.489252 | 101.963740 |     9.2626809 | 0.069910 | 146.576259 |    6.4161752 |
+|     8 |  0.558717 |  84.198390 |     11.217050 | 0.077499 | 125.976733 |    7.4653386 |
+|     9 |  0.631365 |  70.325984 |     13.429710 | 0.072869 | 111.377105 |    8.4439164 |
+|    10 |  0.700728 |  58.371722 |     16.180053 | 0.069818 |  99.105560 |    9.4894672 |
+|    11 |  0.771367 |  48.857899 |     19.330704 | 0.075494 |  88.885449 |    10.580573 |
+|    12 |  0.842209 |  40.221797 |     23.481238 | 0.082492 |  80.508672 |    11.681462 |
+|    13 |  0.910809 |  31.122676 |     30.346285 | 0.082411 |  73.840767 |    12.736311 |
+|    14 |  0.981888 |  27.719613 |     34.071817 | 0.079182 |  69.239863 |    13.582623 |
+|    15 |  1.000000 |  26.371500 |     35.813571 | 0.075333 |  64.275915 |    14.631592 |
+|    16 |  1.000000 |  23.055589 |     40.964366 | 0.080379 |  60.401621 |    15.570095 |
+|    17 |  1.000000 |  20.427541 |     46.234521 | 0.076656 |  56.817016 |    16.552417 |
+#+TBLFM: $4=944.457583/$3::$7=940.458965/$6
+
+#+begin_src gnuplot :var data=cache-time-per-cores :exports results :file plot-cache-time-per-cores.png
+  reset
+  set title 'Speedup'
+  set size 1,1
+  set xrange [1:17]
+  set yrange [0:]
+  set xlabel "cores"
+  set title "500k keys"
+  f(x) = x
+  plot data u 1:4 w lp lw 2 title 'key-hash',\
+       data u 1:7 w lp lw 2 title 'random'
+#+end_src
+
+#+RESULTS:
+[[file:plot-cache-time-per-cores.png]]
+
+#+begin_src gnuplot :var data=cache-time-per-cores :exports results :file plot-cache-cache-hits-per-cores.png
+  reset
+  set title 'Cache hit rate'
+  set size 1,1
+  set xrange [1:17]
+  set yrange [0:]
+  set xlabel "cores"
+  set title "500k keys"
+  plot data u 1:2 w lp lw 2 title 'key-hash',\
+       data u 1:5 w lp lw 2 title 'random'
+#+end_src
+
+
+

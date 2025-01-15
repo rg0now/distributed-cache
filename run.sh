@@ -6,7 +6,7 @@ EXEC="$1"
 KEYS="$2"
 OUTPUT="$3"
 
-THREAD_MULTIPLIER=4
+THREAD_MULTIPLIER=3
 
 # clear outputfile
 echo "cores,mode,hit_rate,elapsed_time" > "$OUTPUT"

@@ -68,7 +68,7 @@ one using a random distribution. This makes it possible to compare the scaling l
 locality-boosting.
 
 The trick is to scale memcached from 1 to 20 servers and jointly scaling the number of PostgreSQL
-threads. Usually we run 4 PostgreSQL client threads per each memcached server instance (this can be
+threads. Usually we run 3 PostgreSQL client threads per each memcached server instance (this can be
 set in the `THREAD_MULTIPLIER` variable in `run.sh`). Meanwhile, we proportionally decrease the
 number of iterations each thread performs in order to keep the total amount of work constant.
 

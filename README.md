@@ -1,4 +1,6 @@
-# Distributed cache scaling benchmark using a PostgreSQL database with a memcached caching layer
+# Distributed caching: Scaling benchmark
+
+Distributed cache scaling benchmark using a PostgreSQL database with a memcached caching layer.
 
 ## Compile
 

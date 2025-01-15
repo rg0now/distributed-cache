@@ -11,8 +11,7 @@ THREAD_MULTIPLIER=4
 # clear outputfile
 echo "cores,mode,hit_rate,elapsed_time" > "$OUTPUT"
 
-# for i in {1..20}; do
-for i in {1..2}; do
+for i in {1..17}; do
     SERVERS="localhost:11211"
     if ((i > 1)); then
         for (( j=2; j<=${i}; j++ )); do

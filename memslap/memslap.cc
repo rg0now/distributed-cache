@@ -315,6 +315,18 @@ static opt_apply wrap_stoul(unsigned long &ul) {
   };
 }
 
+void writeCSV(std::ostream &outStream, const std::vector<std::string> &row) {
+  bool first = true;
+  for (const auto &field : row) {
+    if (!first) {
+      outStream << ","; // Add a comma before the next field
+    }
+    outStream << field; // Write the field
+    first = false;
+  }
+  outStream << "\n"; // End the row
+}
+
 static std::ostream &align(std::ostream &io) {
   return io << std::right << std::setw(8);
 }
@@ -323,6 +335,7 @@ int main(int argc, char *argv[]) {
   client_options opt{PROGRAM_NAME, PROGRAM_VERSION, PROGRAM_DESCRIPTION};
   auto concurrency = DEFAULT_CONCURRENCY;
   auto load_count = DEFAULT_INITIAL_LOAD;
+  std::string output_filename = "-";
 
   for (const auto &def : opt.defaults) {
     opt.add(def);
@@ -352,6 +365,30 @@ int main(int argc, char *argv[]) {
         }
       return true;
     };
+
+  opt.add("distribution-mode", 'm', required_argument, "Distribution mode (modulo-hash|consistent|random, default:modulo-hash).")
+    .apply =
+    [](const client_options &opt_, const client_options::extended_option &ext,
+       memcached_st *memc) {
+      auto server_distribution =  MEMCACHED_DISTRIBUTION_MODULA;
+      std::string mode(ext.arg);
+      if (mode == "modulo-hash") {
+        server_distribution = MEMCACHED_DISTRIBUTION_MODULA;
+      } else if (mode == "consistent") {
+        server_distribution = MEMCACHED_DISTRIBUTION_CONSISTENT;
+      } else if (mode == "random") {
+        server_distribution = MEMCACHED_DISTRIBUTION_RANDOM;
+      }
+      if (MEMCACHED_SUCCESS != memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_DISTRIBUTION, server_distribution)){
+        if (!opt_.isset("quiet")) {
+          std::cerr << memcached_last_error_message(memc) << "\n";
+        }
+        return false;
+      }
+      return true;
+    };
+
+  opt.add("output", 'o', required_argument, "Output csv file (default: stdout).");
   opt.add("flush", 'F', no_argument, "Flush all servers prior test.");
   opt.add("test", 't', required_argument, "Test to perform (options: get,mget,set; default: get).");
   opt.add("concurrency", 'c', required_argument,
@@ -380,6 +417,35 @@ int main(int argc, char *argv[]) {
   if (!opt.apply(&memc)) {
     memcached_free(&memc);
     exit(EXIT_FAILURE);
+  }
+
+  if (opt.has("output")) {
+    output_filename = opt.get("output").arg;
+    if (opt.isset("verbose")) {
+      std::cout << "Using output file: " << output_filename << std::endl;
+    }
+  }
+
+  std::string distribution_mode;
+  if (opt.has("distribution-mode")) {
+    distribution_mode = opt.get("distribution-mode").arg;
+    if (opt.isset("verbose")) {
+      std::cout << "Distribution mode: " << distribution_mode << std::endl;
+    }
+  }
+
+  std::ostream *output = nullptr; // Pointer to an output stream
+  std::ofstream outFile;             // File stream for writing to a file
+  // Special case for standard output
+  if (output_filename == "-") {
+    output = &std::cout; // Use standard output
+  } else {
+    outFile.open(output_filename);
+    if (!outFile) {
+      std::cerr << "Error: Could not open file " << output_filename << " for writing." << std::endl;
+      return 1;
+    }
+    output = &outFile; // Use file stream
   }
 
   auto total_start = time_clock::now();
@@ -530,6 +596,16 @@ int main(int argc, char *argv[]) {
               << time_format(time_clock::now() - total_start).count() << " seconds.\n";
   }
 
+  // writeCSV(std::vector<std::string>{"cores", "mode","hit_rate","time"});
+  std::vector<std::string> data {
+    std::to_string(memcached_server_count(&memc)),
+    distribution_mode,
+    std::to_string(float(hit_num) / float(retrieved)),
+    std::to_string(time_format(test_elapsed).count())};
+  writeCSV(*output, data);
+  if (outFile.is_open()) {
+    outFile.close();
+  }
   memcached_free(&memc);
   exit(EXIT_SUCCESS);
 }
